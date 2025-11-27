@@ -1,0 +1,61 @@
+// nodejs-monitoring-project/jenkins/Jenkinsfile
+pipeline {
+  agent any
+  environment {
+    AWS_REGION = "us-east-1"                           
+    ECR_REGISTRY = "396913715368.dkr.ecr.us-east-1.amazonaws.com"
+    IMAGE_NAME = "nodejs-monitoring-app"
+    MANIFESTS_REPO = "https://github.com/milindpatle/full-deployment-project.git"
+    MANIFESTS_PATH = "kubernetes/nodejs"
+    GIT_CRED_ID = "github-token"                          // Jenkins credential id for Git token
+    AWS_CREDENTIALS_ID = "aws-creds"                      // Jenkins credentials id for AWS
+  }
+  stages {
+    stage('Checkout SCM') {
+      steps {
+        checkout scm
+      }
+    }
+    stage('Build & Unit Test') {
+      steps {
+        dir('app') {
+          sh 'npm install'
+          sh 'npm test || true'
+          sh 'docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} .'
+        }
+      }
+    }
+    stage('Login & Push to ECR') {
+      steps {
+        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
+          sh """
+            aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+            docker tag ${IMAGE_NAME}:${BUILD_NUMBER} ${ECR_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}
+            docker push ${ECR_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}
+          """
+        }
+      }
+    }
+    stage('Update Manifests & Push') {
+      steps {
+        withCredentials([string(credentialsId: "${GIT_CRED_ID}", variable: 'GITHUB_TOKEN')]) {
+          sh """
+            git clone ${MANIFESTS_REPO} manifests-repo
+            cd manifests-repo/${MANIFESTS_PATH}
+            # update image tag (simple sed - works on linux agents)
+            sed -i 's|image: .*|image: ${ECR_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}|' deployment.yaml || true
+            git add deployment.yaml
+            git config user.email "jenkins@ci.local"
+            git config user.name "jenkins-ci"
+            git commit -m "ci: update image to ${BUILD_NUMBER}" || true
+            git push https://${GITHUB_TOKEN}@github.com/<GITHUB_ORG>/nodejs-monitoring-project.git HEAD:<GIT_BRANCH>
+          """
+        }
+      }
+    }
+  }
+  post {
+    success { echo "Pipeline succeeded: ${BUILD_NUMBER}" }
+    failure { echo "Pipeline failed" }
+  }
+}
