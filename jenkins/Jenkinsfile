@@ -7,7 +7,7 @@ pipeline {
     IMAGE_NAME = "nodejs-monitoring-app"
     MANIFESTS_REPO = "https://github.com/milindpatle/full-deployment-project.git"
     MANIFESTS_PATH = "kubernetes/nodejs"
-    GIT_CRED_ID = "github-token"                          // Jenkins credential id for Git token
+    GIT_CRED_ID = "github-creds"                          // Jenkins credential id for Git token
     AWS_CREDENTIALS_ID = "aws-creds"                      // Jenkins credentials id for AWS
   }
   stages {
